@@ -59,13 +59,14 @@ def get_connection(db_path: Path) -> sqlite3.Connection:
 def init_db(db_path: Path) -> None:
     conn = get_connection(db_path)
     try:
-        conn.executescript(SCHEMA_SQL)
-        # Handle migration for existing databases missing the apikey column
+        # Migrate existing databases missing the apikey column before running
+        # the schema script, since CREATE INDEX ... ON assets(apikey) would fail.
         cursor = conn.execute("PRAGMA table_info(assets);")
         columns = [row[1] for row in cursor.fetchall()]
         if columns and "apikey" not in columns:
             conn.execute("ALTER TABLE assets ADD COLUMN apikey TEXT NOT NULL DEFAULT 'default';")
-            conn.execute("CREATE INDEX IF NOT EXISTS idx_assets_apikey ON assets(apikey);")
+            conn.commit()
+        conn.executescript(SCHEMA_SQL)
         conn.commit()
     finally:
         conn.close()
