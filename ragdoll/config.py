@@ -5,7 +5,8 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
     # External services
-    kev_url: str = "http://192.168.0.12:8008"
+    # kev_url: str = "http://192.168.0.12:8008"
+    kev_url: str = "http://192.168.0.189:8080"
     kev_auth_token: str = "hellothere"
     embed_url: str = "http://192.168.0.12:11434"
     embed_model: str = "embeddinggemma-2:740m"
@@ -23,7 +24,7 @@ class Settings(BaseSettings):
     storage_path: Path = Path("data/uploads")
 
     # Pipeline tuning
-    concurrency_limit: int = 6
+    concurrency_limit: int = 4
     batch_embed_size: int = 32
     coarse_min_chars: int = 2000
     coarse_max_chars: int = 4000
