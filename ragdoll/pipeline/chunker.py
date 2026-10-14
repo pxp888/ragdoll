@@ -121,8 +121,8 @@ async def split_fine_chunks_with_kev(
     max_chars: int = 600,
 ) -> List[Dict[str, Any]]:
     """
-    Worker function: Scans a single coarse chunk sequentially, dividing it
-    into fine chunks (~300-600 characters) via Kev boundary decisions.
+    Worker function: Scans a single coarse chunk, dividing it
+    into fine chunks (~300-600 characters) via Kev multi-candidate breakpoint decisions.
     Retains parent_chunk_id = coarse_chunk['id'].
     """
     coarse_text = coarse_chunk["text"]
@@ -139,7 +139,6 @@ async def split_fine_chunks_with_kev(
 
     def add_fine_chunk(chunk_str: str, char_start: int):
         char_end = char_start + len(chunk_str)
-        # calculate byte offsets relative to document
         rel_byte_start = len(coarse_text[:char_start].encode("utf-8"))
         rel_byte_end = len(coarse_text[:char_end].encode("utf-8"))
         fine_chunks.append({
@@ -150,9 +149,13 @@ async def split_fine_chunks_with_kev(
             "byte_offset_end": coarse_byte_start + rel_byte_end,
         })
 
-    for unit in units:
+    i = 0
+    n = len(units)
+    while i < n:
+        unit = units[i]
         if not current_block:
             current_block = unit
+            i += 1
             continue
 
         cand_len = len(current_block) + len(unit)
@@ -160,6 +163,7 @@ async def split_fine_chunks_with_kev(
         # Case 1: Below minimum threshold, accumulate without calling Kev
         if len(current_block) < min_chars:
             current_block += unit
+            i += 1
             continue
 
         # Case 2: Above maximum threshold, force split
@@ -167,20 +171,60 @@ async def split_fine_chunks_with_kev(
             add_fine_chunk(current_block, current_char_start)
             current_char_start += len(current_block)
             current_block = unit
+            i += 1
             continue
 
-        # Case 3: In [min_chars, max_chars], query Kev for boundary decision
-        is_split = await kev_client.decide_boundary(
-            block_a=current_block.strip(),
-            block_b=unit.strip(),
-        )
+        # Case 3: In [min_chars, max_chars], collect candidate units up to max_chars
+        candidates: List[str] = []
+        accum_len = len(current_block)
+        cand_idx = i
+        while cand_idx < n:
+            u = units[cand_idx]
+            if accum_len + len(u) <= max_chars:
+                candidates.append(u)
+                accum_len += len(u)
+                cand_idx += 1
+            else:
+                break
 
-        if is_split:
+        if not candidates:
             add_fine_chunk(current_block, current_char_start)
             current_char_start += len(current_block)
             current_block = unit
+            i += 1
+            continue
+
+        # Query Kev for breakpoint decision among candidates
+        if hasattr(kev_client, "decide_breakpoint"):
+            res = await kev_client.decide_breakpoint(
+                preceding_text=current_block.strip(),
+                candidates=[c.strip() for c in candidates],
+            )
+            split_count = res if isinstance(res, int) else 0
         else:
-            current_block += unit
+            is_split = await kev_client.decide_boundary(
+                block_a=current_block.strip(),
+                block_b=candidates[0].strip(),
+            )
+            split_count = 0 if is_split else len(candidates)
+
+        if split_count == 0:
+            # Split before candidates (current_block forms complete chunk)
+            add_fine_chunk(current_block, current_char_start)
+            current_char_start += len(current_block)
+            current_block = ""
+        elif split_count < len(candidates):
+            # Split after candidate k
+            chosen_units = "".join(candidates[:split_count])
+            full_chunk = current_block + chosen_units
+            add_fine_chunk(full_chunk, current_char_start)
+            current_char_start += len(full_chunk)
+            current_block = ""
+            i += split_count
+        else:
+            # Continue all candidates without splitting
+            current_block += "".join(candidates)
+            i += len(candidates)
 
     if current_block.strip():
         # If trailing block is too small and there's a previous chunk, merge it

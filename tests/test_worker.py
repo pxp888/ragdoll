@@ -42,6 +42,7 @@ async def test_worker_success_pipeline(tmp_path: Path):
     mock_kev = AsyncMock(spec=KevClient)
     mock_kev.check_health.return_value = True
     mock_kev.decide_boundary.return_value = True
+    mock_kev.decide_breakpoint.return_value = 0
 
     await process_asset_pipeline(
         asset_id="worker-asset-1",
@@ -90,6 +91,7 @@ async def test_worker_fail_fast_on_kev_error(tmp_path: Path):
     mock_kev.check_health.return_value = True
     # Simulate a network/HTTP timeout error during Kev worker execution
     mock_kev.decide_boundary.side_effect = ConnectionResetError("Kev connection reset")
+    mock_kev.decide_breakpoint.side_effect = ConnectionResetError("Kev connection reset")
 
     await process_asset_pipeline(
         asset_id="fail-asset-1",
