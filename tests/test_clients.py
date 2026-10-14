@@ -33,6 +33,15 @@ async def test_live_kev_client():
     is_split = await client.decide_boundary(block_a, block_b)
     assert isinstance(is_split, bool)
 
+    # Test multi-candidate breakpoint decision
+    candidates = [
+        "Embeddings allow semantic search across large corpuses.",
+        "Tomorrow's weather forecast predicts a high of 22 degrees and light rain.",
+    ]
+    breakpoint_idx = await client.decide_breakpoint(block_a, candidates)
+    assert isinstance(breakpoint_idx, int)
+    assert 0 <= breakpoint_idx <= len(candidates)
+
     # Test relevance scoring
     query = "dense embeddings in machine learning"
     passage = "Vector embeddings capture the semantic meaning of sentences in a high dimensional space."

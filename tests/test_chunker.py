@@ -46,6 +46,7 @@ def test_split_atomic_units():
 async def test_split_fine_chunks_with_mock_kev():
     mock_kev = AsyncMock(spec=KevClient)
     mock_kev.decide_boundary.return_value = True
+    mock_kev.decide_breakpoint.return_value = 0
 
     sample_text = (
         "Sentence one discusses system architecture. " * 10
