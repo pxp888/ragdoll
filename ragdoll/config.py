@@ -29,7 +29,7 @@ class Settings(BaseSettings):
     coarse_min_chars: int = 2000
     coarse_max_chars: int = 4000
     fine_min_chars: int = 300
-    fine_max_chars: int = 600
+    fine_max_chars: int = 1500
 
     # Network timeouts (seconds)
     request_timeout: float = 30.0

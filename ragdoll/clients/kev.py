@@ -45,10 +45,10 @@ class KevClient:
             "questions": {
                 "boundary": {
                     "type": "choice",
-                    "instructions": "Does the subject matter shift significantly enough between these blocks to warrant a separate semantic chunk?",
+                    "instructions": "Determine whether to place a chunk boundary before the candidate text.",
                     "criteria": {
-                        "continue": "The text continues the same topic or contextual narrative.",
-                        "split": "The text begins a distinct topic, section, or logical transition.",
+                        "split": "Split: The candidate marks a natural break (such as a new paragraph, change of speaker, scene shift, or change of action).",
+                        "continue": "Do not split: The candidate directly continues the same immediate thought, statement, or description.",
                     },
                 }
             },
@@ -70,7 +70,7 @@ class KevClient:
             split_prob = probs.get("split", 0.0)
 
             # Split if choice is split or split probability is high
-            return choice == "split" or split_prob >= 0.5
+            return choice == "split" or split_prob >= 0.38
 
     async def decide_breakpoint(
         self,
@@ -93,14 +93,14 @@ class KevClient:
         # Build candidate lines and criteria
         cand_text_lines = []
         criteria = {
-            "before_1": "Between preceding text and [1].",
+            "before_1": "Split before [1]: [1] begins a new scene, speaker, action, or distinct thought.",
         }
         for idx, cand in enumerate(candidates, start=1):
             cand_text_lines.append(f"[{idx}] {cand.strip()}")
             if idx < len(candidates):
-                criteria[f"after_{idx}"] = f"Between [{idx}] and [{idx+1}]."
+                criteria[f"after_{idx}"] = f"Split after [{idx}]: [{idx}] completes the current thought, and [{idx+1}] begins a transition."
 
-        criteria["continue_all"] = "No significant shift; all sentences continue the topic."
+        criteria["continue_all"] = "Keep together: all sentences belong to the same uninterrupted passage."
 
         next_text = "\n".join(cand_text_lines)
         payload = {
@@ -108,7 +108,7 @@ class KevClient:
             "questions": {
                 "boundary": {
                     "type": "choice",
-                    "instructions": "Where does a significant semantic shift occur to start a new chunk?",
+                    "instructions": "Where is the most natural boundary to end this passage and begin a new retrieval chunk?",
                     "criteria": criteria,
                 }
             },
