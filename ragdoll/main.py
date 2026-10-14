@@ -9,6 +9,7 @@ from ragdoll.database import init_db
 from ragdoll.routes import router
 from ragdoll.clients.embedding import EmbeddingClient
 from ragdoll.clients.kev import KevClient
+from ragdoll.clients.standard_reranker import StandardReranker
 
 logging.basicConfig(
     level=logging.INFO,
@@ -36,6 +37,11 @@ async def lifespan(app: FastAPI):
             base_url=settings.kev_url,
             auth_token=settings.kev_auth_token,
             timeout=settings.request_timeout,
+        )
+    if not hasattr(app.state, "standard_reranker") or app.state.standard_reranker is None:
+        app.state.standard_reranker = StandardReranker(
+            model_name=settings.reranker_model,
+            cache_dir=settings.reranker_cache_dir,
         )
 
     embedding_client = app.state.embedding_client
@@ -78,7 +84,7 @@ async def lifespan(app: FastAPI):
 def create_app() -> FastAPI:
     app = FastAPI(
         title="ragdoll",
-        description="Kev-Based RAG Server with Multi-Scale Indexing",
+        description="RAG Server with Multi-Scale Indexing and Dual Kev / Standard Retrieval",
         version="0.1.0",
         lifespan=lifespan,
     )

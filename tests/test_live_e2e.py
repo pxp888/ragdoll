@@ -10,6 +10,8 @@ from ragdoll.main import create_app
 from ragdoll.clients.embedding import EmbeddingClient
 from ragdoll.clients.kev import KevClient
 
+LIVE_HEADERS = {"X-API-Key": "live-test-user"}
+
 
 @pytest.mark.asyncio
 async def test_live_end_to_end(tmp_path: Path):
@@ -29,7 +31,7 @@ async def test_live_end_to_end(tmp_path: Path):
 
     with TestClient(app) as client:
         # 1. Health check against live servers
-        h_resp = client.get("/health")
+        h_resp = client.get("/health", headers=LIVE_HEADERS)
         assert h_resp.status_code == 200
         assert h_resp.json()["status"] == "healthy"
 
@@ -46,6 +48,7 @@ async def test_live_end_to_end(tmp_path: Path):
         resp = client.post(
             "/store",
             files={"file": ("tech_report.md", io.BytesIO(document_text.encode("utf-8")), "text/markdown")},
+            headers=LIVE_HEADERS,
         )
         assert resp.status_code == 202
         asset_id = resp.json()["asset_id"]
@@ -55,7 +58,7 @@ async def test_live_end_to_end(tmp_path: Path):
         status_data = None
         start = time.time()
         while time.time() - start < max_wait:
-            s_resp = client.get(f"/assets/{asset_id}/status")
+            s_resp = client.get(f"/assets/{asset_id}/status", headers=LIVE_HEADERS)
             assert s_resp.status_code == 200
             status_data = s_resp.json()
             if status_data["status"] in ("fine_indexed", "failed"):
@@ -78,6 +81,7 @@ async def test_live_end_to_end(tmp_path: Path):
                 "rerank": False,
                 "include_parent_context": True,
             },
+            headers=LIVE_HEADERS,
         )
         assert search_resp.status_code == 200
         results = search_resp.json()["results"]
@@ -95,6 +99,7 @@ async def test_live_end_to_end(tmp_path: Path):
                 "rerank": True,
                 "include_parent_context": True,
             },
+            headers=LIVE_HEADERS,
         )
         assert rerank_resp.status_code == 200
         rerank_results = rerank_resp.json()["results"]

@@ -1,5 +1,6 @@
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from typing import Optional
 from pathlib import Path
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
@@ -8,6 +9,10 @@ class Settings(BaseSettings):
     kev_auth_token: str = "hellothere"
     embed_url: str = "http://192.168.0.12:11434"
     embed_model: str = "embeddinggemma-2:740m"
+
+    # Standard reranker (FlashRank / cross-encoder)
+    reranker_model: str = "ms-marco-TinyBERT-L-2-v2"
+    reranker_cache_dir: Optional[str] = None
 
     # Server settings
     host: str = "0.0.0.0"

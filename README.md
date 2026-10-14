@@ -1,6 +1,6 @@
-# ragdoll - Kev-Based RAG Server
+# ragdoll - RAG Server with Multi-Scale Indexing & Dual Retrieval
 
-**ragdoll** is a high-performance RAG (Retrieval-Augmented Generation) server combining **FastAPI**, **SQLite** with the **`sqlite-vec`** extension, **`embeddinggemma2`** for dense vector embeddings, and a **Kev 4B** decision model for intelligent boundary detection and semantic re-ranking.
+**ragdoll** is a high-performance RAG (Retrieval-Augmented Generation) server combining **FastAPI**, **SQLite** with the **`sqlite-vec`** extension, **`embeddinggemma2`** for dense vector embeddings, a **Kev 4B** decision model for intelligent semantic boundary detection and LLM-based re-ranking, and a high-speed **standard cross-encoder re-ranker** (FlashRank).
 
 ---
 
@@ -15,9 +15,10 @@
   - **Stage 2 (Parallel Kev Fine Indexing)**: Shards across coarse chunks concurrently (`asyncio.TaskGroup` + `asyncio.Semaphore`), using Kev 4B (`/v1/systemone`) to detect semantic topic transitions (~300–600 chars), embeds fine chunks in batches, and indexes with parent-child linkage.
 - **Unified SQLite Vector Store**:
   - Relational metadata and cosine embeddings unified in SQLite via `sqlite-vec`.
-- **Search & Semantic Re-ranking**:
-  - Hybrid vector search with parent coarse chunk context retrieval.
-  - Optional semantic re-ranking powered by Kev 4B relevance scoring.
+- **Dual Retrieval & Re-ranking Endpoints**:
+  - **Kev-Based Retrieval (`POST /retrieve/kev`)**: Semantic relevance re-ranking powered by Kev 4B System One decisions.
+  - **Standard Re-ranking Retrieval (`POST /retrieve/standard`)**: Ultra-fast (~5–15ms) neural cross-encoder re-ranking (FlashRank ONNX) running locally without network roundtrips or GPU requirements.
+  - **Unified Search (`POST /search`)**: Vector similarity search with configurable optional re-ranking (`"kev"` or `"standard"`).
 - **Health & Readiness Check**:
   - Active connectivity probe via `GET /health`.
 
@@ -77,15 +78,15 @@
   }
   ```
 
-### 3. Search Chunks
-- **Endpoint**: `POST /search`
+### 3. Kev-Based Retrieval
+- **Endpoint**: `POST /retrieve/kev` (alias: `POST /search/kev`)
+- **Description**: Retrieves candidate chunks via vector search and scores them using Kev 4B System One questions.
 - **Payload**:
   ```json
   {
     "query": "operating profit breakdown Q3",
     "top_k": 5,
     "stage": "fine",
-    "rerank": true,
     "include_parent_context": true
   }
   ```
@@ -97,27 +98,101 @@
         "chunk_id": 142,
         "asset_id": "8b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d",
         "filename": "annual_report.pdf",
-        "score": 1.826,
+        "score": 1.95,
         "text": "Operating profit in Q3 rose by 14%...",
         "parent_context": "Full section text from coarse chunk...",
         "created_at": "2026-10-14T16:00:00Z"
       }
-    ]
+    ],
+    "rerank_method": "kev"
   }
   ```
 
-### 4. Download Raw Asset
+### 4. Standard Re-ranking Retrieval (Without Kev)
+- **Endpoint**: `POST /retrieve/standard` (alias: `POST /search/standard`)
+- **Description**: Retrieves candidate chunks via vector search and re-ranks them using a lightweight local neural cross-encoder (FlashRank ONNX), executing in ~5–15ms.
+- **Payload**:
+  ```json
+  {
+    "query": "operating profit breakdown Q3",
+    "top_k": 5,
+    "stage": "fine",
+    "include_parent_context": true
+  }
+  ```
+- **Response**: `200 OK`
+  ```json
+  {
+    "results": [
+      {
+        "chunk_id": 142,
+        "asset_id": "8b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d",
+        "filename": "annual_report.pdf",
+        "score": 0.9821,
+        "text": "Operating profit in Q3 rose by 14%...",
+        "parent_context": "Full section text from coarse chunk...",
+        "created_at": "2026-10-14T16:00:00Z"
+      }
+    ],
+    "rerank_method": "standard"
+  }
+  ```
+
+### 5. Unified Search
+- **Endpoint**: `POST /search`
+- **Description**: Vector search with optional re-ranking (`rerank: true/false`, `rerank_method: "kev" | "standard"`).
+- **Payload**:
+  ```json
+  {
+    "query": "operating profit breakdown Q3",
+    "top_k": 5,
+    "stage": "fine",
+    "rerank": false,
+    "include_parent_context": true
+  }
+  ```
+
+### 6. Download Raw Asset
 - **Endpoint**: `GET /get/{asset_id}` (alias: `GET /assets/{asset_id}`)
 - **Response**: Binary file stream with `Content-Disposition`.
 
-### 5. Health Check
+### 7. Delete a Specific Asset
+- **Endpoint**: `DELETE /assets/{asset_id}` (alias: `DELETE /delete/{asset_id}`)
+- **Description**: Deletes an asset, coarse/fine chunks, vector embeddings, and disk file for the authenticated user.
+- **Response**: `200 OK`
+  ```json
+  {
+    "deleted": true,
+    "asset_id": "8b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d",
+    "message": "Asset 8b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d deleted successfully"
+  }
+  ```
+
+### 8. Delete All Assets Under an API Key
+- **Endpoint**: `DELETE /assets/by-key/{apikey}` (alias: `DELETE /assets?apikey={apikey}`)
+- **Description**: Deletes all assets, chunks, embeddings, and disk files belonging to a specified API key.
+- **Response**: `200 OK`
+  ```json
+  {
+    "deleted_count": 2,
+    "apikey": "test-user-key",
+    "asset_ids": [
+      "8b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d",
+      "7a1deb4d-2a7d-4bad-9bdd-2b0d7b3dcb6c"
+    ],
+    "message": "Deleted 2 asset(s) under apikey 'test-user-key'"
+  }
+  ```
+
+### 9. Health Check
 - **Endpoint**: `GET /health`
 - **Response**: `200 OK` (or `503 Service Unavailable` if external dependencies are down)
   ```json
   {
     "status": "healthy",
     "embeddinggemma2": "healthy",
-    "kev_4b": "healthy"
+    "kev_4b": "healthy",
+    "standard_reranker": "healthy"
   }
   ```
 

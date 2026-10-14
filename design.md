@@ -198,6 +198,34 @@ Retrieve the original raw stored asset file.
 
 * **Response**: Binary stream with appropriate `Content-Type` and `Content-Disposition`.
 
+### `DELETE /assets/{asset_id}` (or `/delete/{asset_id}`)
+Delete a specific asset by ID, along with its coarse/fine chunks, sqlite-vec embeddings, and file on disk. Scoped to the caller's authenticated API key by default.
+
+* **Response** (`200 OK`):
+  ```json
+  {
+    "deleted": true,
+    "asset_id": "9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d",
+    "message": "Asset 9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d deleted successfully"
+  }
+  ```
+
+### `DELETE /assets/by-key/{apikey}` (or `DELETE /assets?apikey={apikey}`)
+Delete all assets, chunks, vector embeddings, and storage files associated with a specified API key.
+
+* **Response** (`200 OK`):
+  ```json
+  {
+    "deleted_count": 2,
+    "apikey": "user_api_key",
+    "asset_ids": [
+      "9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d",
+      "8c2deb4d-2a7d-4bad-9bdd-2b0d7b3dcb6e"
+    ],
+    "message": "Deleted 2 asset(s) under apikey 'user_api_key'"
+  }
+  ```
+
 ### `GET /health`
 Liveness and readiness check. Actively tests connectivity to both `embeddinggemma2` and `kev 4B`. Returns `503 Service Unavailable` if either dependency is down.
 
