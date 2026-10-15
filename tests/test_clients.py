@@ -1,3 +1,4 @@
+import httpx
 import pytest
 from ragdoll.clients.embedding import EmbeddingClient
 from ragdoll.clients.kev import KevClient
@@ -66,3 +67,64 @@ async def test_standard_reranker():
     assert results[0]["id"] == 2
     assert "score" in results[0]
     assert results[0]["score"] > results[1]["score"]
+
+
+class _FakeResp:
+    def raise_for_status(self):
+        pass
+
+    def json(self):
+        return {"answers": {"boundary": {"choice": "continue_all"}}}
+
+
+def _fake_client_factory(fail_times, calls):
+    class FakeClient:
+        def __init__(self, *a, **k):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *a):
+            return False
+
+        async def post(self, url, json=None, headers=None):
+            if calls[0] < fail_times:
+                calls[0] += 1
+                raise httpx.ReadTimeout("simulated stall")
+            calls[0] += 1
+            return _FakeResp()
+
+    return FakeClient
+
+
+@pytest.mark.asyncio
+async def test_kev_retries_read_timeout_then_succeeds(monkeypatch):
+    import ragdoll.clients.kev as kev_mod
+    from unittest.mock import AsyncMock
+
+    calls = [0]
+    monkeypatch.setattr(kev_mod.httpx, "AsyncClient", _fake_client_factory(2, calls))
+    monkeypatch.setattr(kev_mod.asyncio, "sleep", AsyncMock())
+
+    client = KevClient(base_url="http://unused")
+    result = await client.decide_breakpoint("preceding text", ["one", "two"])
+
+    assert result == 2  # continue_all -> len(candidates)
+    assert calls[0] == 3  # two timeouts, then success
+
+
+@pytest.mark.asyncio
+async def test_kev_raises_after_retries_exhausted(monkeypatch):
+    import ragdoll.clients.kev as kev_mod
+    from unittest.mock import AsyncMock
+
+    calls = [0]
+    monkeypatch.setattr(kev_mod.httpx, "AsyncClient", _fake_client_factory(99, calls))
+    monkeypatch.setattr(kev_mod.asyncio, "sleep", AsyncMock())
+
+    client = KevClient(base_url="http://unused")
+    with pytest.raises(httpx.ReadTimeout):
+        await client.decide_breakpoint("preceding text", ["one"])
+
+    assert calls[0] == 3  # exactly max attempts

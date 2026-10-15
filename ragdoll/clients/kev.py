@@ -1,3 +1,4 @@
+import asyncio
 from typing import Optional, Dict, Any, List
 import httpx
 from ragdoll.config import settings
@@ -34,6 +35,30 @@ class KevClient:
             data = resp.json()
             return "models" in data
 
+    async def _post_systemone(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        POST to /v1/systemone, retrying on transient network errors.
+        The Kev server can stall under concurrent load; a fresh request
+        usually gets served while the stalled one times out.
+        shortcut: fixed 3 attempts / linear backoff; make configurable if we need per-caller tuning.
+        """
+        last_exc = None
+        for attempt in range(3):
+            try:
+                async with httpx.AsyncClient(timeout=self.timeout) as client:
+                    resp = await client.post(
+                        f"{self.base_url}/v1/systemone",
+                        json=payload,
+                        headers=self._headers,
+                    )
+                    resp.raise_for_status()
+                    return resp.json()
+            except httpx.TransportError as e:  # timeouts + connection errors; HTTP status errors fail fast
+                last_exc = e
+                if attempt < 2:
+                    await asyncio.sleep(1.5 * (attempt + 1))
+        raise last_exc
+
     async def decide_boundary(self, block_a: str, block_b: str) -> bool:
         """
         Queries Kev 4B systemone to decide if there is a semantic boundary
@@ -54,23 +79,16 @@ class KevClient:
             },
         }
 
-        async with httpx.AsyncClient(timeout=self.timeout) as client:
-            resp = await client.post(
-                f"{self.base_url}/v1/systemone",
-                json=payload,
-                headers=self._headers,
-            )
-            resp.raise_for_status()
-            data = resp.json()
-            boundary_ans = (
-                data.get("answers", {}).get("boundary", {})
-            )
-            choice = boundary_ans.get("choice")
-            probs = boundary_ans.get("probabilities", {})
-            split_prob = probs.get("split", 0.0)
+        data = await self._post_systemone(payload)
+        boundary_ans = (
+            data.get("answers", {}).get("boundary", {})
+        )
+        choice = boundary_ans.get("choice")
+        probs = boundary_ans.get("probabilities", {})
+        split_prob = probs.get("split", 0.0)
 
-            # Split if choice is split or split probability is high
-            return choice == "split" or split_prob >= 0.38
+        # Split if choice is split or split probability is high
+        return choice == "split" or split_prob >= 0.38
 
     async def decide_breakpoint(
         self,
@@ -114,29 +132,22 @@ class KevClient:
             },
         }
 
-        async with httpx.AsyncClient(timeout=self.timeout) as client:
-            resp = await client.post(
-                f"{self.base_url}/v1/systemone",
-                json=payload,
-                headers=self._headers,
-            )
-            resp.raise_for_status()
-            data = resp.json()
-            boundary_ans = data.get("answers", {}).get("boundary", {})
-            choice = boundary_ans.get("choice")
+        data = await self._post_systemone(payload)
+        boundary_ans = data.get("answers", {}).get("boundary", {})
+        choice = boundary_ans.get("choice")
 
-            if choice == "before_1":
-                return 0
-            if choice == "continue_all":
-                return len(candidates)
-            if choice and choice.startswith("after_"):
-                try:
-                    k = int(choice.split("_")[1])
-                    return min(max(k, 1), len(candidates))
-                except (ValueError, IndexError):
-                    return len(candidates)
-
+        if choice == "before_1":
+            return 0
+        if choice == "continue_all":
             return len(candidates)
+        if choice and choice.startswith("after_"):
+            try:
+                k = int(choice.split("_")[1])
+                return min(max(k, 1), len(candidates))
+            except (ValueError, IndexError):
+                return len(candidates)
+
+        return len(candidates)
 
     async def score_relevance(self, query: str, passage: str) -> float:
         """
@@ -157,13 +168,6 @@ class KevClient:
             },
         }
 
-        async with httpx.AsyncClient(timeout=self.timeout) as client:
-            resp = await client.post(
-                f"{self.base_url}/v1/systemone",
-                json=payload,
-                headers=self._headers,
-            )
-            resp.raise_for_status()
-            data = resp.json()
-            relevance_ans = data.get("answers", {}).get("relevance", {})
-            return float(relevance_ans.get("score", 0.0))
+        data = await self._post_systemone(payload)
+        relevance_ans = data.get("answers", {}).get("relevance", {})
+        return float(relevance_ans.get("score", 0.0))
