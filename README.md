@@ -2,6 +2,15 @@
 
 **ragdoll** is a high-performance RAG (Retrieval-Augmented Generation) server combining **FastAPI**, **SQLite** with the **`sqlite-vec`** extension, **`embeddinggemma2`** for dense vector embeddings, a **Kev 4B** decision model for intelligent semantic boundary detection and LLM-based re-ranking, and a high-speed **standard cross-encoder re-ranker** (FlashRank).
 
+The embedding server and decision models are both external servers, so they can be swapped out for better alternatives as they develop.  
+
+The idea behind this is that a decision model can make better decisions regarding where to separate chunks for embedding than other naive strategies.  This is a trade off because ingesting data takes longer with a decision model in the loop, but the quality of separation is better, therefore the search results are better.  
+
+There are also three possible retrieval methods here.  One uses no re-ranking, don't do this.  One uses standard re-ranking which is fast, and one uses the decision model which gives better results but is rather slow.  
+
+
+[initial test results](tests.md)
+
 ---
 
 ## Features
