@@ -27,7 +27,7 @@ Ragdoll is a FastAPI RAG server: upload files → background pipeline (extract t
 | DELETE | `/assets/by-key/{apikey}` | Delete all assets under a given key. (Also: `DELETE /assets?apikey=<k>`.) |
 | GET | `/health` | Liveness of embedding service, Kev 4B, and standard reranker. Returns **503** if embedding or Kev is down. Requires the API key. |
 
-Unlisted aliases exist (`/retrieve`, `/retrieve/kev`, `/retrieve/standard`, `/api/v1/assets`) but are not in the OpenAPI schema — use the canonical paths above.
+`/retrieve/kev` and `/retrieve/standard` also appear in the OpenAPI schema (dual-registered). Hidden aliases not in the schema: `POST /api/v1/assets` (= `/store`), `POST /retrieve` (= `/search`), `GET /assets/{asset_id}` (= download), and delete variants `DELETE /delete/{asset_id}`, `DELETE /get/{asset_id}`, `DELETE /assets/apikey/{apikey}`, `DELETE /keys/{apikey}/assets`. Use the canonical paths above.
 
 ## Search request / response
 

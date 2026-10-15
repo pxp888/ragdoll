@@ -12,7 +12,7 @@
 - **Two-Stage Multi-Scale Indexing**:
   - **Immediate Ingestion**: Saves files and returns `202 Accepted` immediately.
   - **Stage 1 (Coarse Indexing)**: Splits at structural boundaries (~2,000–4,000 chars), embeds with `embeddinggemma2`, and marks asset as `coarse_indexed` (searchable immediately).
-  - **Stage 2 (Parallel Kev Fine Indexing)**: Shards across coarse chunks concurrently (`asyncio.TaskGroup` + `asyncio.Semaphore`), using Kev 4B (`/v1/systemone`) to detect semantic topic transitions (~300–600 chars), embeds fine chunks in batches, and indexes with parent-child linkage.
+  - **Stage 2 (Parallel Kev Fine Indexing)**: Shards across coarse chunks concurrently (`asyncio.TaskGroup` + `asyncio.Semaphore`), using Kev 4B (`/v1/systemone`) to detect semantic topic transitions (~300–1,500 chars), embeds fine chunks in batches, and indexes with parent-child linkage.
 - **Unified SQLite Vector Store**:
   - Relational metadata and cosine embeddings unified in SQLite via `sqlite-vec`.
 - **Dual Retrieval & Re-ranking Endpoints**:
@@ -158,7 +158,8 @@
 
 ### 7. Delete a Specific Asset
 - **Endpoint**: `DELETE /assets/{asset_id}` (alias: `DELETE /delete/{asset_id}`)
-- **Description**: Deletes an asset, coarse/fine chunks, vector embeddings, and disk file for the authenticated user.
+- **Query param** (optional): `?target_apikey=<owner>` — defaults to the caller's key; pass another key to delete its assets.
+- **Description**: Deletes an asset, coarse/fine chunks, vector embeddings, and disk file.
 - **Response**: `200 OK`
   ```json
   {
