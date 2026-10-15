@@ -31,6 +31,10 @@ class Settings(BaseSettings):
     fine_min_chars: int = 300
     fine_max_chars: int = 1500
 
+    # Background task concurrency and shutdown
+    max_active_tasks: int = 2
+    shutdown_timeout: float = 10.0
+
     # Network timeouts (seconds)
     request_timeout: float = 30.0
 

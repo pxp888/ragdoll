@@ -10,6 +10,7 @@ from ragdoll.routes import router
 from ragdoll.clients.embedding import EmbeddingClient
 from ragdoll.clients.kev import KevClient
 from ragdoll.clients.standard_reranker import StandardReranker
+from ragdoll.pipeline.manager import BackgroundTaskManager
 
 logging.basicConfig(
     level=logging.INFO,
@@ -25,7 +26,7 @@ async def lifespan(app: FastAPI):
     init_db(settings.db_path)
     settings.storage_path.mkdir(parents=True, exist_ok=True)
 
-    # 2. Initialize external clients if not already injected
+    # 2. Initialize external clients and background task manager if not already injected
     if not hasattr(app.state, "embedding_client") or app.state.embedding_client is None:
         app.state.embedding_client = EmbeddingClient(
             base_url=settings.embed_url,
@@ -42,6 +43,10 @@ async def lifespan(app: FastAPI):
         app.state.standard_reranker = StandardReranker(
             model_name=settings.reranker_model,
             cache_dir=settings.reranker_cache_dir,
+        )
+    if not hasattr(app.state, "task_manager") or app.state.task_manager is None:
+        app.state.task_manager = BackgroundTaskManager(
+            max_concurrent_tasks=settings.max_active_tasks,
         )
 
     embedding_client = app.state.embedding_client
@@ -76,9 +81,23 @@ async def lifespan(app: FastAPI):
         logger.critical(err_msg)
         raise RuntimeError(err_msg)
 
+    # 4. Recover queued assets stranded from previous server shutdown
+    try:
+        recovered = await app.state.task_manager.recover_pending_assets(
+            db_path=settings.db_path,
+            embedding_client=embedding_client,
+            kev_client=kev_client,
+        )
+        if recovered > 0:
+            logger.info(f"Startup recovery: scheduled {recovered} queued asset(s) for background processing.")
+    except Exception as e:
+        logger.warning(f"Failed to recover queued assets on startup: {e}")
+
     logger.info("All dependency probes passed successfully. ragdoll is ready to serve.")
     yield
     logger.info("Shutting down ragdoll server.")
+    if hasattr(app.state, "task_manager") and app.state.task_manager is not None:
+        await app.state.task_manager.shutdown(timeout=settings.shutdown_timeout)
 
 
 def create_app() -> FastAPI:

@@ -45,6 +45,7 @@ from ragdoll.clients.embedding import EmbeddingClient
 from ragdoll.clients.kev import KevClient
 from ragdoll.clients.standard_reranker import StandardReranker
 from ragdoll.pipeline.worker import process_asset_pipeline
+from ragdoll.pipeline.manager import BackgroundTaskManager
 
 logger = logging.getLogger("ragdoll.api")
 router = APIRouter(dependencies=[Depends(get_api_key)])
@@ -67,6 +68,16 @@ def get_standard_reranker(request: Request) -> StandardReranker:
         )
         request.app.state.standard_reranker = reranker
     return reranker
+
+
+def get_task_manager(request: Request) -> BackgroundTaskManager:
+    manager = getattr(request.app.state, "task_manager", None)
+    if manager is None:
+        manager = BackgroundTaskManager(
+            max_concurrent_tasks=settings.max_active_tasks,
+        )
+        request.app.state.task_manager = manager
+    return manager
 
 
 async def _retrieve_candidates(
@@ -196,6 +207,7 @@ async def store_asset(
     api_key: str = Depends(get_api_key),
     embedding_client: EmbeddingClient = Depends(get_embedding_client),
     kev_client: KevClient = Depends(get_kev_client),
+    task_manager: BackgroundTaskManager = Depends(get_task_manager),
 ):
     """
     Upload an asset. Saves file to disk, enqueues background processing, and returns immediately.
@@ -252,9 +264,9 @@ async def store_asset(
     finally:
         conn.close()
 
-    # Enqueue background ingestion pipeline
+    # Enqueue background ingestion pipeline via task_manager
     background_tasks.add_task(
-        process_asset_pipeline,
+        task_manager.process_asset,
         asset_id=asset_id,
         db_path=settings.db_path,
         embedding_client=embedding_client,
@@ -423,6 +435,7 @@ async def health_check(
     embedding_client: EmbeddingClient = Depends(get_embedding_client),
     kev_client: KevClient = Depends(get_kev_client),
     standard_reranker: StandardReranker = Depends(get_standard_reranker),
+    task_manager: BackgroundTaskManager = Depends(get_task_manager),
 ):
     """
     Liveness and readiness check. Requires valid API key. Actively tests connectivity to both
@@ -462,6 +475,7 @@ async def health_check(
             "embeddinggemma2_error": embed_err,
             "kev_4b_error": kev_err,
             "standard_reranker_error": standard_err,
+            "task_manager": task_manager.get_stats(),
         },
     }
 
