@@ -6,7 +6,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     # External services
     # kev_url: str = "http://192.168.0.12:8008"
-    kev_url: str = "http://192.168.0.189:8080"
+    kev_url: str = "http://192.168.0.189:8008"
     kev_auth_token: str = "hellothere"
     embed_url: str = "http://192.168.0.12:11434"
     embed_model: str = "embeddinggemma-2:740m"
